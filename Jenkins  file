@@ -1,0 +1,51 @@
+node{
+    stage('code fetching form GitHub'){
+        
+        //code is fetched and copied to our jenkins server
+        git branch: 'main ', url: 'https://github.com/merina-poudyal/cicd-demo.git'     
+
+    }
+    stage('docker build image'){
+        //build and tag image in this stage
+        //docker build -t <source_image_name>
+        //docker tag <source_image_name> <username/target_image_name>
+
+        sh "docker build -t ${JOB_NAME}:v1.${BUILD_ID} ."
+        sh "docker tag ${JOB_NAME}:v1.${BUILD_ID} merina2025/${JOB_NAME}:v1.${BUILD_ID}"
+        sh "docker tag ${JOB_NAME}:v1.${BUILD_ID} merina2025/${JOB_NAME}:latest"
+    }
+    
+    stage('Pushing image to Docker Hub from Jenkins Server'){
+        
+       withCredentials([string(credentialsId: 'dockerpass', variable: 'dockerpass')]) {
+        //login to Docker Hub 
+        sh "docker login -u merina2025 -p ${dockerpass}"
+
+        //Push version image
+        sh "docker push merina2025/${JOB_NAME}:v1.${BUILD_ID}"
+
+        //Push latest tag 
+        sh "docker push merina2025/${JOB_NAME}:latest"
+        
+        //docker rmi <image_name:version>
+        sh "docker rmi ${JOB_NAME}:v1.${BUILD_ID} merina2025/${JOB_NAME}:v1.${BUILD_ID} merina2025/${JOB_NAME}:latest"
+
+        
+       }
+    }
+    
+    stage('Docker container Deployment'){
+        sshagent(['webserverSSH']) {
+            def docker_cmd = """
+              docker stop GOD || true
+              docker rm GOD || true
+              docker pull merina2025/${JOB_NAME}:latest
+              docker run -d --name GOD -p 9000:80 merina2025/${JOB_NAME}:latest
+              
+            """
+            sh """
+             ssh -o StrictHostKeyChecking=no ubuntu@54.160.195.229 "${docker_cmd}"
+            """
+        }
+    }
+}
